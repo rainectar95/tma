@@ -5,8 +5,8 @@
     <title>🌯 Заказ Лаваша и Продуктов</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
+        /* ... (Стили остаются без изменений) ... */
         :root {
-            /* Адаптация к теме Telegram */
             --tg-bg: var(--tg-theme-bg-color, #ffffff);
             --tg-secondary-bg: var(--tg-theme-secondary-bg-color, #f4f4f4);
             --tg-text: var(--tg-theme-text-color, #000000);
@@ -23,15 +23,11 @@
             margin: 0;
         }
         h1, h2 { color: var(--tg-text); margin: 15px 0 10px 0; border-bottom: 1px solid var(--tg-secondary-bg); padding-bottom: 5px; }
-        
-        /* Каталог */
         .product-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; padding: 5px 0; }
         .product-card { background-color: var(--tg-secondary-bg); padding: 10px; border-radius: 8px; text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
         .product-img { width: 100%; height: 100px; object-fit: cover; border-radius: 4px; margin-bottom: 5px; }
         .product-price { font-weight: bold; color: var(--tg-link); margin-bottom: 8px; font-size: 16px; }
         .add-btn, .order-btn { background-color: var(--tg-button); color: var(--tg-button-text); border: none; padding: 8px 0; width: 100%; border-radius: 6px; cursor: pointer; font-weight: bold; }
-
-        /* Корзина */
         .cart-item { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px dashed var(--tg-hint); }
         .cart-details { flex-grow: 1; padding-right: 15px; }
         .cart-name { font-weight: 600; }
@@ -40,8 +36,6 @@
         .item-quantity { font-weight: bold; width: 25px; text-align: center; }
         .total-summary { margin-top: 20px; padding: 15px; background-color: var(--tg-secondary-bg); border-radius: 8px; }
         .total-summary div { display: flex; justify-content: space-between; margin-bottom: 5px; }
-        
-        /* Форма заказа */
         .form-group { margin-bottom: 15px; }
         label { display: block; margin-bottom: 5px; font-weight: 600; }
         input[type="text"], textarea, select { 
@@ -130,7 +124,7 @@
         function fetchApi(action, method = 'GET', data = null) {
             let url = APPS_SCRIPT_URL;
             
-            // ИСПОЛЬЗУЕМ MAIN BUTTON ДЛЯ ИНДИКАТОРА ПРОГРЕССА (ИСПРАВЛЕНО)
+            // ИСПРАВЛЕННО: Используем MainButton для прогресса (более надежно)
             tg.MainButton.showProgress(false);
 
             if (method === 'GET') {
@@ -150,18 +144,38 @@
                 })
                 .catch(error => {
                     tg.MainButton.hideProgress();
-                    tg.showAlert(`Сетевая ошибка: ${error.message}`);
+                    
+                    // ИСПРАВЛЕННО: Используем alert() для критических ошибок API
+                    alert(`Сетевая ошибка: ${error.message}`); 
                     return { status: 'error', message: 'Сетевая ошибка' };
                 });
         }
 
         // --- УТИЛИТЫ UI и Навигации ---
 
+        function showInfoAlert(message) {
+            // В зависимости от версии API, используем либо showPopup, либо alert
+            if (typeof tg.showPopup === 'function') {
+                tg.showPopup({ title: 'Информация', message: message, buttons: [{ id: 'ok', type: 'ok' }] });
+            } else {
+                alert(message);
+            }
+        }
+
+        function showConfirmDialog(message, callback) {
+            if (typeof tg.showConfirm === 'function') {
+                 tg.showConfirm(message, callback);
+            } else {
+                 callback(confirm(message));
+            }
+        }
+
         function updateMainButton() {
             if (document.getElementById('catalog-view').style.display !== 'none') {
+                const total = currentTotals.finalTotal > 0 ? `${currentTotals.finalTotal} ₽` : '0 ₽';
                 const text = currentCart.length === 0 
                     ? `🛒 Корзина (0)` 
-                    : `🛒 Корзина (${currentCart.length}) ${currentTotals.finalTotal} ₽`;
+                    : `🛒 Корзина (${currentCart.length}) ${total}`;
                 tg.MainButton.setText(text).show();
                 tg.MainButton.onClick(showCart);
             } else {
@@ -196,7 +210,7 @@
                     allProducts = productsData.products;
                     renderProducts(allProducts);
                 } else {
-                    tg.showAlert(`Ошибка загрузки каталога: ${productsData.message}`);
+                    showInfoAlert(`Ошибка загрузки каталога: ${productsData.message}`);
                 }
 
                 if (userData.status === 'success') {
@@ -211,7 +225,7 @@
                 showView('catalog-view');
 
             } catch (error) {
-                tg.showAlert('Критическая ошибка загрузки данных: ' + error);
+                alert('Критическая ошибка загрузки данных: ' + error); // Используем alert()
             }
         }
         
@@ -240,33 +254,27 @@
         }
         
         function showAddToCartPopup(product) {
-            // Упрощенная логика для TMA: не используем input/select в showPopup.
-            // В реальном TMA для выбора опции нужно использовать отдельное View.
             const selectedOption = (product.options && product.options.length > 0) ? product.options[0] : null;
 
-            tg.showPopup({
-                title: product.name,
-                message: `${product.description || ''}\n\nЦена: ${product.price} ₽`,
-                buttons: [
-                    { id: 'add', type: 'default', text: `Добавить в корзину` },
-                    { id: 'close', type: 'cancel', text: 'Отмена' }
-                ]
-            }, (buttonId) => {
-                if (buttonId === 'add') {
-                    addToCart(product.id, 1, selectedOption);
+            showConfirmDialog(`Добавить "${product.name}" (${product.price} ₽) в корзину?` + 
+                             (selectedOption ? `\n\n(Опция: ${selectedOption})` : ''), 
+                (isConfirmed) => {
+                    if (isConfirmed) {
+                        addToCart(product.id, 1, selectedOption);
+                    }
                 }
-            });
+            );
         }
 
 
         // --- ЛОГИКА КОРЗИНЫ ---
         
         async function showCart() {
-            await updateCartView(); // Обновляем корзину перед показом
+            await updateCartView(); 
             
             if (currentCart.length === 0) {
-                 showView('catalog-view'); // Если корзина пуста, остаемся в каталоге
-                 tg.showAlert('Корзина пуста.');
+                 showView('catalog-view'); 
+                 showInfoAlert('Корзина пуста.');
                  return;
             }
             showView('cart-view');
@@ -330,7 +338,7 @@
                 <div><b>Итого к оплате:</b> <b>${currentTotals.finalTotal} ₽</b></div>
             `;
             
-            updateMainButton(); // Обновляем текст кнопки
+            updateMainButton();
         }
         
         function updateCartItemQty(itemId, option, change) {
@@ -355,10 +363,10 @@
                          currentCart = data.newCart;
                          currentTotals = data.newTotals;
                          tg.HapticFeedback.notificationOccurred('success'); 
-                         tg.showPopup({ title: 'Готово', message: 'Товар успешно добавлен!' });
+                         showInfoAlert('Товар успешно добавлен!');
                          updateMainButton();
                      } else {
-                         tg.showAlert('Ошибка добавления: ' + data.message);
+                         showInfoAlert('Ошибка добавления: ' + data.message);
                      }
                  });
         }
@@ -369,11 +377,11 @@
                     if (data.status === 'success') {
                         currentTotals = data.newTotals;
                         tg.HapticFeedback.impactOccurred('light');
-                        renderCart(); // Перерисовываем UI
+                        renderCart(); 
                         updateMainButton();
                     } else {
-                        tg.showAlert('Ошибка сохранения: ' + data.message);
-                        loadAllData(); // Полная перезагрузка для синхронизации
+                        showInfoAlert('Ошибка сохранения: ' + data.message);
+                        loadAllData();
                     }
                 });
         }
@@ -382,22 +390,19 @@
 
         async function showCheckoutForm() {
             if (currentCart.length === 0) {
-                 tg.showAlert('Корзина пуста!');
+                 showInfoAlert('Корзина пуста!');
                  return;
             }
             
-            // 1. Обновление данных пользователя
             const data = await fetchApi('get_user_info');
             if (data.status === 'success') {
                  currentUserInfo = data.user;
             }
 
-            // 2. Загрузка данных пользователя в форму
             document.getElementById('name').value = currentUserInfo.name || '';
             document.getElementById('phone').value = currentUserInfo.phone || '';
             document.getElementById('address').value = currentUserInfo.address || '';
             
-            // 3. Обновляем сводку в форме
             document.getElementById('checkout-summary').innerHTML = `
                 <div><span>Сумма товаров:</span> <span>${currentTotals.totalItemsAmount} ₽</span></div>
                 <div><span>Доставка:</span> <span>${currentTotals.deliveryCost === 0 ? 'Бесплатно' : currentTotals.deliveryCost + ' ₽'}</span></div>
@@ -429,11 +434,11 @@
             const deliveryType = document.getElementById('deliveryType').value;
 
             if (!name || !phone) {
-                tg.showAlert('Пожалуйста, заполните Имя и Телефон.');
+                showInfoAlert('Пожалуйста, заполните Имя и Телефон.');
                 return;
             }
             if (deliveryType === 'Доставка' && !address) {
-                tg.showAlert('Пожалуйста, введите Адрес доставки.');
+                showInfoAlert('Пожалуйста, введите Адрес доставки.');
                 return;
             }
 
@@ -441,7 +446,7 @@
             fetchApi('update_user_info', 'POST', { name, address, phone })
                 .then(data => {
                     if (data.status !== 'success') {
-                        tg.showAlert('Ошибка сохранения данных клиента.');
+                        showInfoAlert('Ошибка сохранения данных клиента.');
                         return;
                     }
                     
@@ -454,7 +459,7 @@
                         deliveryType 
                     };
                     
-                    tg.showConfirm(`Подтвердите заказ на сумму ${currentTotals.finalTotal} ₽. Выбран: ${deliveryType}.`, (isConfirmed) => {
+                    showConfirmDialog(`Подтвердите заказ на сумму ${currentTotals.finalTotal} ₽. Выбран: ${deliveryType}.`, (isConfirmed) => {
                         if (isConfirmed) {
                              sendFinalOrder(orderDetails);
                         }
@@ -466,10 +471,10 @@
              fetchApi('place_order', 'POST', { orderDetails })
                  .then(data => {
                      if (data.status === 'success') {
-                         tg.showAlert(`🎉 Заказ №${data.orderId} оформлен! Общая сумма: ${data.finalTotal} ₽. Мы скоро с Вами свяжемся.`);
+                         showInfoAlert(`🎉 Заказ №${data.orderId} оформлен! Общая сумма: ${data.finalTotal} ₽. Мы скоро с Вами свяжемся.`);
                          tg.close(); // Закрываем Mini App
                      } else {
-                         tg.showAlert(`🚫 Ошибка оформления: ${data.message}`);
+                         showInfoAlert(`🚫 Ошибка оформления: ${data.message}`);
                      }
                  });
         }
@@ -479,7 +484,9 @@
 
         function init() {
             if (!currentUserId) {
-                tg.showAlert("Ошибка: ID пользователя Telegram не найден. Пожалуйста, перезапустите бота.");
+                // ИСПРАВЛЕННО: Выводим критическую ошибку через alert()
+                document.body.innerHTML = '<h1>Критическая ошибка</h1><p>ID пользователя Telegram не найден. Пожалуйста, перезапустите бота.</p>';
+                alert("Критическая ошибка: ID пользователя Telegram не найден. Перезапустите бота."); 
                 tg.close();
                 return;
             }
