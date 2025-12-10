@@ -111,8 +111,7 @@
     <script>
         const tg = window.Telegram.WebApp;
         const currentUserId = tg.initDataUnsafe.user ? tg.initDataUnsafe.user.id : null;
-        const APPS_SCRIPT_URL = '<?= ScriptApp.get=' + 'WebAppUrl() ?>';
-        
+        const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/1PDomrBbw12B2fAlg8S4TUEl5_qxPQw_l5zEjxh_j6bOUL4t-PV6ZevD0/exec';        
         let allProducts = []; 
         let currentCart = []; 
         let currentTotals = { totalItemsAmount: 0, deliveryCost: 0, finalTotal: 0 };
@@ -502,3 +501,4 @@
     </script>
 </body>
 </html>
+
