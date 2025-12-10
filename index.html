@@ -13,6 +13,7 @@
             --tg-link: var(--tg-theme-link-color, #2481cc);
             --tg-button: var(--tg-theme-button-color, #50a8eb);
             --tg-button-text: var(--tg-theme-button-text-color, #ffffff);
+            --tg-hint: var(--tg-theme-hint-color, #777777);
         }
         body { 
             font-family: sans-serif; 
@@ -128,7 +129,9 @@
 
         function fetchApi(action, method = 'GET', data = null) {
             let url = APPS_SCRIPT_URL;
-            tg.showProgress(); // Показать индикатор загрузки
+            
+            // ИСПОЛЬЗУЕМ MAIN BUTTON ДЛЯ ИНДИКАТОРА ПРОГРЕССА (ИСПРАВЛЕНО)
+            tg.MainButton.showProgress(false);
 
             if (method === 'GET') {
                 url += `?action=${action}&user_data=${encodeURIComponent(tg.initData)}`; 
@@ -142,17 +145,29 @@
             
             return fetch(url, options)
                 .then(response => {
-                    tg.hideProgress();
+                    tg.MainButton.hideProgress();
                     return response.json();
                 })
                 .catch(error => {
-                    tg.hideProgress();
+                    tg.MainButton.hideProgress();
                     tg.showAlert(`Сетевая ошибка: ${error.message}`);
                     return { status: 'error', message: 'Сетевая ошибка' };
                 });
         }
 
         // --- УТИЛИТЫ UI и Навигации ---
+
+        function updateMainButton() {
+            if (document.getElementById('catalog-view').style.display !== 'none') {
+                const text = currentCart.length === 0 
+                    ? `🛒 Корзина (0)` 
+                    : `🛒 Корзина (${currentCart.length}) ${currentTotals.finalTotal} ₽`;
+                tg.MainButton.setText(text).show();
+                tg.MainButton.onClick(showCart);
+            } else {
+                tg.MainButton.hide();
+            }
+        }
 
         function showView(viewId) {
             document.getElementById('catalog-view').style.display = 'none';
@@ -164,12 +179,7 @@
                 viewToShow.style.display = 'block';
             }
             
-            if (viewId === 'catalog-view') {
-                tg.MainButton.setText(`🛒 Корзина (${currentCart.length}) ${currentTotals.finalTotal} ₽`).show();
-                tg.MainButton.onClick(showCart);
-            } else {
-                tg.MainButton.hide();
-            }
+            updateMainButton();
         }
 
         // --- ЛОГИКА ЗАГРУЗКИ ДАННЫХ ---
@@ -230,14 +240,10 @@
         }
         
         function showAddToCartPopup(product) {
-            let optionsHtml = '';
-            let selectedOption = null;
+            // Упрощенная логика для TMA: не используем input/select в showPopup.
+            // В реальном TMA для выбора опции нужно использовать отдельное View.
+            const selectedOption = (product.options && product.options.length > 0) ? product.options[0] : null;
 
-            if (product.options && product.options.length > 0) {
-                optionsHtml = product.options.map(opt => `<option value="${opt}">${opt}</option>`).join('');
-                selectedOption = product.options[0]; // Выбираем первую опцию по умолчанию
-            }
-            
             tg.showPopup({
                 title: product.name,
                 message: `${product.description || ''}\n\nЦена: ${product.price} ₽`,
@@ -247,7 +253,6 @@
                 ]
             }, (buttonId) => {
                 if (buttonId === 'add') {
-                    // Используем заглушку, так как showPopup не позволяет вставить input/select.
                     addToCart(product.id, 1, selectedOption);
                 }
             });
@@ -258,6 +263,12 @@
         
         async function showCart() {
             await updateCartView(); // Обновляем корзину перед показом
+            
+            if (currentCart.length === 0) {
+                 showView('catalog-view'); // Если корзина пуста, остаемся в каталоге
+                 tg.showAlert('Корзина пуста.');
+                 return;
+            }
             showView('cart-view');
         }
 
@@ -266,8 +277,6 @@
             if (data.status === 'success') {
                 currentCart = data.cart;
                 currentTotals = data.totals;
-            } else {
-                 currentCart = [];
             }
             
             renderCart();
@@ -284,14 +293,13 @@
                 emptyMsg.style.display = 'block';
                 summary.style.display = 'none';
                 document.getElementById('checkout-btn').disabled = true;
-                showView('catalog-view'); // Вернуть в каталог, если корзина пуста
                 return;
             }
             
             emptyMsg.style.display = 'none';
             document.getElementById('checkout-btn').disabled = false;
             
-            currentCart.forEach((item, index) => {
+            currentCart.forEach((item) => {
                 const productInfo = allProducts.find(p => p.id === item.id);
                 const price = productInfo ? productInfo.price : 0;
                 const name = productInfo ? productInfo.name : `Неизвестный товар (${item.id})`;
@@ -322,7 +330,7 @@
                 <div><b>Итого к оплате:</b> <b>${currentTotals.finalTotal} ₽</b></div>
             `;
             
-            tg.MainButton.setText(`🛒 Корзина (${currentCart.length}) ${currentTotals.finalTotal} ₽`).show();
+            updateMainButton(); // Обновляем текст кнопки
         }
         
         function updateCartItemQty(itemId, option, change) {
@@ -345,11 +353,10 @@
                  .then(data => {
                      if (data.status === 'success') {
                          currentCart = data.newCart;
-                         currentTotals = calculateCartTotals(currentCart); // Грубый расчет на фронте
+                         currentTotals = data.newTotals;
                          tg.HapticFeedback.notificationOccurred('success'); 
                          tg.showPopup({ title: 'Готово', message: 'Товар успешно добавлен!' });
-                         renderCart(); // Обновляем UI
-                         showView('catalog-view');
+                         updateMainButton();
                      } else {
                          tg.showAlert('Ошибка добавления: ' + data.message);
                      }
@@ -360,29 +367,42 @@
             fetchApi('save_cart', 'POST', { newCart: currentCart })
                 .then(data => {
                     if (data.status === 'success') {
+                        currentTotals = data.newTotals;
                         tg.HapticFeedback.impactOccurred('light');
-                        updateCartView(); // Перезагружаем с сервера для актуальных totals
+                        renderCart(); // Перерисовываем UI
+                        updateMainButton();
                     } else {
                         tg.showAlert('Ошибка сохранения: ' + data.message);
+                        loadAllData(); // Полная перезагрузка для синхронизации
                     }
                 });
         }
         
         // --- ФОРМА ОФОРМЛЕНИЯ ---
 
-        function showCheckoutForm() {
+        async function showCheckoutForm() {
             if (currentCart.length === 0) {
                  tg.showAlert('Корзина пуста!');
                  return;
             }
             
-            // Загрузка данных пользователя в форму
+            // 1. Обновление данных пользователя
+            const data = await fetchApi('get_user_info');
+            if (data.status === 'success') {
+                 currentUserInfo = data.user;
+            }
+
+            // 2. Загрузка данных пользователя в форму
             document.getElementById('name').value = currentUserInfo.name || '';
             document.getElementById('phone').value = currentUserInfo.phone || '';
             document.getElementById('address').value = currentUserInfo.address || '';
             
-            // Обновляем сводку в форме
-            document.getElementById('checkout-summary').innerHTML = document.getElementById('cart-summary').innerHTML;
+            // 3. Обновляем сводку в форме
+            document.getElementById('checkout-summary').innerHTML = `
+                <div><span>Сумма товаров:</span> <span>${currentTotals.totalItemsAmount} ₽</span></div>
+                <div><span>Доставка:</span> <span>${currentTotals.deliveryCost === 0 ? 'Бесплатно' : currentTotals.deliveryCost + ' ₽'}</span></div>
+                <div><b>Итого к оплате:</b> <b>${currentTotals.finalTotal} ₽</b></div>
+            `;
             
             toggleAddressField();
             showView('checkout-view');
@@ -446,26 +466,12 @@
              fetchApi('place_order', 'POST', { orderDetails })
                  .then(data => {
                      if (data.status === 'success') {
-                         tg.showAlert(`🎉 Заказ №${data.orderId} оформлен! Общая сумма: ${currentTotals.finalTotal} ₽.`);
-                         tg.MainButton.hide();
+                         tg.showAlert(`🎉 Заказ №${data.orderId} оформлен! Общая сумма: ${data.finalTotal} ₽. Мы скоро с Вами свяжемся.`);
                          tg.close(); // Закрываем Mini App
                      } else {
                          tg.showAlert(`🚫 Ошибка оформления: ${data.message}`);
                      }
                  });
-        }
-
-        // --- УТИЛИТА РАСЧЕТА НА ФРОНТЕ (ГРУБАЯ) ---
-        function calculateCartTotals(cart) {
-            let total = 0;
-            cart.forEach(item => {
-                const product = allProducts.find(p => p.id === item.id);
-                if (product) {
-                    total += product.price * item.qty;
-                }
-            });
-            // На фронте мы не знаем BASE_DELIVERY_COST, используем заглушку
-            return { totalItemsAmount: total, deliveryCost: 0, finalTotal: total };
         }
 
 
