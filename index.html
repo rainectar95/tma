@@ -111,7 +111,10 @@
     <script>
         const tg = window.Telegram.WebApp;
         const currentUserId = tg.initDataUnsafe.user ? tg.initDataUnsafe.user.id : null;
-        const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyrSusIgQOUBRCaWzoeJ3en-nTeLun1zRnajAqfvmaWRB2qgLXfQvm4a9-FOl7cfPy8/exec';        
+        
+        // !!! ВАЖНО: ЗАМЕНИТЕ ЭТУ ССЫЛКУ НА РЕАЛЬНЫЙ URL ВАШЕГО РАЗВЕРТЫВАНИЯ APPS SCRIPT !!!
+        const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbx1DqHVdAN5zGEJP2Y3ftkCtyvnrvZTsk0SOgugCTg/exec'; // <-- Убедитесь, что это актуально!
+        
         let allProducts = []; 
         let currentCart = []; 
         let currentTotals = { totalItemsAmount: 0, deliveryCost: 0, finalTotal: 0 };
@@ -121,13 +124,14 @@
         // --- УТИЛИТЫ API ---
 
         function fetchApi(action, method = 'GET', data = null) {
-            let url = APPS_SCRIPT_URL;
+            let url = 'https://script.google.com/macros/s/AKfycbyrSusIgQOUBRCaWzoeJ3en-nTeLun1zRnajAqfvmaWRB2qgLXfQvm4a9-FOl7cfPy8/exec';
             
-            // ИСПРАВЛЕННО: Используем MainButton для прогресса (более надежно)
+            // ИСПРАВЛЕНО: Используем MainButton для прогресса
             tg.MainButton.showProgress(false);
 
             if (method === 'GET') {
-                url += `?action=${action}&user_data=${encodeURIComponent(tg.initData)}`; 
+                // Добавляем Origin для CORS (хотя Apps Script не всегда это читает, это хорошая практика)
+                url += `?action=${action}&user_data=${encodeURIComponent(tg.initData)}&origin=${encodeURIComponent(window.location.origin)}`; 
             }
 
             const options = { method: method };
@@ -139,21 +143,30 @@
             return fetch(url, options)
                 .then(response => {
                     tg.MainButton.hideProgress();
+                    // Проверяем статус ответа
+                    if (!response.ok) {
+                         // Если получили 4xx/5xx, читаем тело как текст (возможно, это HTML-ошибка Apps Script)
+                        return response.text().then(text => { 
+                            throw new Error(`HTTP Error: ${response.status} - ${text.substring(0, 100)}...`);
+                        });
+                    }
                     return response.json();
                 })
                 .catch(error => {
                     tg.MainButton.hideProgress();
-                    
-                    // ИСПРАВЛЕННО: Используем alert() для критических ошибок API
-                    alert(`Сетевая ошибка: ${error.message}`); 
-                    return { status: 'error', message: 'Сетевая ошибка' };
+                    // ИСПРАВЛЕНО: Для ясности выводим полный текст ошибки.
+                    alert(`СЕТЕВАЯ ОШИБКА API: ${error.message}`); 
+                    return { status: 'error', message: `Сетевая ошибка: ${error.message}` };
                 });
         }
 
+        // --- (Остальные функции UI и логики остаются как в предыдущем ответе) ---
+        // showInfoAlert, showConfirmDialog, updateMainButton, showView, loadAllData, renderProducts, showAddToCartPopup, showCart, updateCartView, renderCart, updateCartItemQty, addToCart, saveCartToServer, showCheckoutForm, toggleAddressField, placeOrder, sendFinalOrder
+
+        
         // --- УТИЛИТЫ UI и Навигации ---
 
         function showInfoAlert(message) {
-            // В зависимости от версии API, используем либо showPopup, либо alert
             if (typeof tg.showPopup === 'function') {
                 tg.showPopup({ title: 'Информация', message: message, buttons: [{ id: 'ok', type: 'ok' }] });
             } else {
@@ -224,7 +237,7 @@
                 showView('catalog-view');
 
             } catch (error) {
-                alert('Критическая ошибка загрузки данных: ' + error); // Используем alert()
+                alert('Критическая ошибка загрузки данных: ' + error); 
             }
         }
         
@@ -441,7 +454,6 @@
                 return;
             }
 
-            // 1. Сохраняем введенные данные
             fetchApi('update_user_info', 'POST', { name, address, phone })
                 .then(data => {
                     if (data.status !== 'success') {
@@ -449,7 +461,6 @@
                         return;
                     }
                     
-                    // 2. Отправляем финальный заказ
                     const orderDetails = { 
                         name, 
                         phone, 
@@ -471,7 +482,7 @@
                  .then(data => {
                      if (data.status === 'success') {
                          showInfoAlert(`🎉 Заказ №${data.orderId} оформлен! Общая сумма: ${data.finalTotal} ₽. Мы скоро с Вами свяжемся.`);
-                         tg.close(); // Закрываем Mini App
+                         tg.close(); 
                      } else {
                          showInfoAlert(`🚫 Ошибка оформления: ${data.message}`);
                      }
@@ -483,7 +494,6 @@
 
         function init() {
             if (!currentUserId) {
-                // ИСПРАВЛЕННО: Выводим критическую ошибку через alert()
                 document.body.innerHTML = '<h1>Критическая ошибка</h1><p>ID пользователя Telegram не найден. Пожалуйста, перезапустите бота.</p>';
                 alert("Критическая ошибка: ID пользователя Telegram не найден. Перезапустите бота."); 
                 tg.close();
@@ -501,7 +511,3 @@
     </script>
 </body>
 </html>
-
-
-
-
